@@ -128,42 +128,45 @@ static void setup_midi(void) {
 }
 
 static void adc(void) {
-  uint8_t count0 = 0;
-  uint16_t adc0[SAMPLES];
+//  uint8_t count0 = 0;
+//  uint16_t adc0[SAMPLES];
   uint16_t old0 = 0;
-  uint8_t count1 = 0;
-   uint16_t adc1[SAMPLES];
+//  uint8_t count1 = 0;
+//   uint16_t adc1[SAMPLES];
   uint16_t old1 = 0;
   adc_init();
   adc_gpio_init(27);
   adc_gpio_init(28);
+  uint16_t mean;
   while(true) {
     adc_select_input(0);
-    adc0[count0++] = adc_read();
-    if(count0 == SAMPLES) {
-      uint64_t mean = 0;
-      for(uint8_t i = 0; i < SAMPLES; i++)
-        mean += adc0[i];
-      mean /= SAMPLES;
-      mean >>= 5;
+    mean = adc_read();
+    // adc0[count0++] = adc_read();
+    // if(count0 == SAMPLES) {
+    //   uint64_t mean = 0;
+    //   for(uint8_t i = 0; i < SAMPLES; i++)
+    //     mean += adc0[i];
+    //   mean /= SAMPLES;
+    //   mean >>= 5;
       if(mean != old0) {
         control_change(0x07, mean);
         old0 = mean;
       }
-    }
+    // }
     adc_select_input(1);
-    adc1[count1++] = adc_read();
-    if(count1 == SAMPLES) {
-      uint64_t mean = 0;
-      for(uint8_t i = 0; i < SAMPLES; i++)
-        mean += adc1[i];
-      mean /= SAMPLES;
-      mean >>= 5;
+    mean = adc_read();
+    // adc1[count1++] = adc_read();
+    // if(count1 == SAMPLES) {
+    //   uint64_t mean = 0;
+    //   for(uint8_t i = 0; i < SAMPLES; i++)
+    //     mean += adc1[i];
+    //   mean /= SAMPLES;
+    //   mean >>= 5;
       if(mean != old1) {
         control_change(0x10, mean);
         old1 = mean;
       }
-    }
+    // }
   }
 }
 
