@@ -1,0 +1,102 @@
+.program segment
+.wrap_target
+.side_set 3
+pull   noblock         side 0     
+mov    x, osr          side 0     
+out    pins, 8         side 1     
+out    pins, 8         side 2     
+out    pins, 8         side 4     
+.wrap
+
+% c-sdk  {
+static const uint8_t digits[] = {
+  0b11000000, // 0 // unused!!!
+  0b11111001, // 1
+  0b10100100, // 2 
+  0b10110000, // 3
+  0b10011001, // 4
+  0b10010010, // 5
+  0b10000010, // 6
+  0b11111000, // 7
+  0b10000000, // 8
+  0b10100011, // USER
+  0b10011100, // FACTORY
+//  0b10011000, // 9 // unused!!!
+};
+#define USER 9
+#define FACTORY 10
+
+static uint segment_sm;
+
+#include "hardware/clocks.h"
+static inline void segment_program_init(PIO pio, uint sm, uint offset, uint first_segment_pin, uint first_digit_pin) {
+    const uint segment_pins = 8;
+    const uint digit_pins = 3;
+
+    // Machine configuration: out pins, sideset pins, and shift direction.
+    pio_sm_config c = segment_program_get_default_config(offset);
+    sm_config_set_out_pins(&c, first_segment_pin, segment_pins);
+    sm_config_set_sideset_pins(&c, first_digit_pin);
+    sm_config_set_out_shift(&c, false, false, 32); // Shift to the left
+
+    // Attach all pins to the PIO peripheral
+    for (uint pin = first_segment_pin; pin < first_segment_pin + segment_pins; pin++) {
+        pio_gpio_init(pio, pin);
+    }
+    for (uint pin = first_digit_pin; pin < first_digit_pin + digit_pins; pin++) {
+        pio_gpio_init(pio, pin);
+    }
+
+    // Configure all pins as outputs
+    pio_sm_set_consecutive_pindirs(pio, sm, first_segment_pin, segment_pins, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, first_digit_pin, digit_pins, true);
+
+    // Run at 2000Hz:
+    float div = (float)clock_get_hz(clk_sys) / 2000;
+    sm_config_set_clkdiv(&c, div);
+
+    // Start the machine
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+static uint8_t display_value[3];
+
+static void setup_segment(uint first_segment_pin, uint first_digit_pin) {
+  display_value[0] = 0b11111111;
+  display_value[1] = 0b11111111;
+  display_value[2] = 0b11111111;
+  const uint offset = pio_add_program(pio1, &segment_program);
+  segment_sm = pio_claim_unused_sm(pio1, true);
+  segment_program_init(pio1, segment_sm, offset, first_segment_pin, first_digit_pin);
+}
+
+//static uint32_t display_value;
+static void set_dot(const uint_fast8_t n) {
+  display_value[n] = display_value[n] & ~(1 << 7);
+  pio_sm_put(pio1, segment_sm,
+    display_value[0] << 24 |
+    display_value[1] << 16 |
+    display_value[2] << 8);
+}
+
+static void unset_dot(const uint_fast8_t n) {
+  display_value[n] = display_value[n] | (1 << 7);
+  pio_sm_put(pio1, segment_sm,
+    display_value[0] << 24 |
+    display_value[1] << 16 |
+    display_value[2] << 8);
+}
+
+static void set_digit(const uint_fast8_t n, const uint8_t digit) {
+  const bool dot = (display_value[n] >> 7)&1;
+  uint_fast8_t d = digits[digit];
+  if(dot) 
+    d = d | (1 << 7); 
+  display_value[n] = d;//gits[digit] | dot << 7;   
+  pio_sm_put(pio1, 0,
+    display_value[0] << 24 |
+    display_value[1] << 16 |
+    display_value[2] << 8);
+}
+%}

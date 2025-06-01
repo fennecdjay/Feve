@@ -1,0 +1,6 @@
+[submodule "pio_midi_uart_lib"]
+	path = pio_midi_uart_lib
+	url = https://github.com/rppicomidi/pio_midi_uart_lib
+[submodule "ring_buffer_lib"]
+	path = ring_buffer_lib
+	url = https://github.com/rppicomidi/ring_buffer_lib
