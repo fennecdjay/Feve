@@ -1,4 +1,3 @@
-#include <hardware/address_mapped.h>
 #include <pico/stdlib.h>
 #include <pico/multicore.h>
 #include <hardware/pio.h>
@@ -29,9 +28,6 @@ static void control_change(const uint_fast8_t ctl, const uint_fast16_t n) {
   mutex_enter_blocking(&mutex);
   uint8_t buf[3] = { 176, ctl, n };
   pio_midi_out_write_tx_buffer(midi_port, buf, 3);
-  // buf[1] = ctl + 32;
-  // buf[2] = (uint8_t)n;
-  // pio_midi_out_write_tx_buffer(midi_port, buf, 3);
   mutex_exit(&mutex);
 }
 
@@ -74,7 +70,7 @@ static void fn_callback(uint32_t events) {
 }
 
 static void gpio_callback(uint gpio, uint32_t events) {
-  if(gpio == 4) alt_callback(events);
+  if(gpio == ALT_PIN) alt_callback(events);
   else fn_callback(events);
 }
 
@@ -84,16 +80,16 @@ static void on_pgm(void) {
   has_pgm = true;
 }
 
-static uint8_t get(void) {
+static inline uint8_t sw_get(void) {
   const uint32_t n = pio_sm_get(pio1, sws_sm);
   if(n==8) return 3;
   return n/2;
 }
 
-
 static void handle_pgm(void) {
   has_pgm = false;
-  const uint32_t n = get() + 4*alt;
+  const uint32_t n = sw_get() + 4*alt;
+
   if(!mode) {
     unset_dot(PGM);
     program_change(64*ab + 8*bank + n);
@@ -127,46 +123,38 @@ static void setup_midi(void) {
   mutex_init(&mutex);
 }
 
+static uint16_t adc_val[N_ADC];
+static uint16_t adc_acc[N_ADC][SAMPLES];
+
+static inline uint16_t adc_mean(const uint n) {
+  uint16_t mean = 0;
+  for(uint i = 0; i < SAMPLES; i++) {
+    mean += adc_acc[n][i];
+  }
+  mean /= SAMPLES;
+  return mean >>= 4;
+}
+static uint sample_count[N_ADC];
+static inline void adc_get(const uint n, const uint ctl) {
+  adc_select_input(n);
+  adc_acc[n][sample_count[n]++] = adc_read();
+  if(sample_count[n] == 10) {
+    const uint16_t mean = adc_mean(n);
+    if(mean != adc_val[n]) {
+      control_change(ctl, mean);
+      adc_val[n] = mean;
+    }
+    sample_count[n] = 0;
+  }
+}
+
 static void adc(void) {
-//  uint8_t count0 = 0;
-//  uint16_t adc0[SAMPLES];
-  uint16_t old0 = 0;
-//  uint8_t count1 = 0;
-//   uint16_t adc1[SAMPLES];
-  uint16_t old1 = 0;
   adc_init();
   adc_gpio_init(27);
   adc_gpio_init(28);
-  uint16_t mean;
   while(true) {
-    adc_select_input(0);
-    mean = adc_read();
-    // adc0[count0++] = adc_read();
-    // if(count0 == SAMPLES) {
-    //   uint64_t mean = 0;
-    //   for(uint8_t i = 0; i < SAMPLES; i++)
-    //     mean += adc0[i];
-    //   mean /= SAMPLES;
-    //   mean >>= 5;
-      if(mean != old0) {
-        control_change(0x07, mean);
-        old0 = mean;
-      }
-    // }
-    adc_select_input(1);
-    mean = adc_read();
-    // adc1[count1++] = adc_read();
-    // if(count1 == SAMPLES) {
-    //   uint64_t mean = 0;
-    //   for(uint8_t i = 0; i < SAMPLES; i++)
-    //     mean += adc1[i];
-    //   mean /= SAMPLES;
-    //   mean >>= 5;
-      if(mean != old1) {
-        control_change(0x10, mean);
-        old1 = mean;
-      }
-    // }
+    adc_get(0, volume);
+    adc_get(1, expression);
   }
 }
 
@@ -174,15 +162,16 @@ int main() {
   setup_mute();
   setup_irq();
   setup_segment(first_segment_pin, first_digit_pin);
-  sws_sm = setup_pgm(on_pgm);
+  sws_sm = setup_pgm(SW_PIN, on_pgm);
   setup_midi();
+
+  multicore_launch_core1(adc);
 
   set_digit(PGM, 1);
   set_digit(AB, USER);
   set_digit(BANK, 1);
-  program_change(1);
+  program_change(0);
 
-  multicore_launch_core1(adc);
   while(true) {
     if(has_pgm) handle_pgm();
     if(mute_change) {

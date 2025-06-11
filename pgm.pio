@@ -30,14 +30,14 @@ static inline void pgm_program_init(PIO pio, uint sm, uint offset, uint base, ui
   pio_sm_set_enabled(pio, sm, true);
 }
 
-static inline int setup_pgm(void (*on_pgm)(void))  {
+static inline int setup_pgm(uint start_pin, void (*on_pgm)(void))  {
   const uint offset = pio_add_program(pio1, &pgm_program);
   const int sm = pio_claim_unused_sm(pio1, true);
   pio_set_irq1_source_enabled(pio1, sm, true);
   irq_set_exclusive_handler(PIO1_IRQ_0, on_pgm);
   irq_set_enabled(PIO1_IRQ_0, true);
   pio1_hw->inte0 = PIO_IRQ0_INTE_SM0_BITS | PIO_IRQ0_INTE_SM1_BITS;
-  pgm_program_init(pio1, sm, offset, 0, 4);
+  pgm_program_init(pio1, sm, offset, start_pin, 4);
   return sm;
 }
 
